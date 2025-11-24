@@ -5,6 +5,9 @@ import copy
 import os
 import datetime
 import statistics
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import time
 
 # --- 1. Modelagem MDVRP (Multi-Depot) ---
 
@@ -184,7 +187,8 @@ class HGS_MDVRP:
                 best_tour = neighbor
         return best_tour, best_fit
 
-    def run(self, run_id):
+    def run(self, run_id=None):
+        # Optional: use run_id in randomness if provided (for reproducibility)
         self.inicializar()
         self.populacao.sort(key=lambda x: x[1])
         best_sol = self.populacao[0]
@@ -245,20 +249,50 @@ def save_plot(problem, rotas, custo_total, folder, filename="best_run.png"):
     plt.close()
     print(f"Graph saved to: {save_path}")
 
+# -----------------------
+# Parallel execution code
+# -----------------------
+
+def _worker_run(args):
+    """
+    Executed in worker processes.
+    args: tuple (run_id, DATASET_FILE, POP_SIZE, GENERATIONS, SEED_BASE)
+    Returns: (run_id, best_seq, best_fit)
+    """
+    run_id, DATASET_FILE, POP_SIZE, GENERATIONS, SEED_BASE = args
+
+    # Re-seed RNG for reproducibility (different seed per run)
+    seed = SEED_BASE + int(run_id)
+    random.seed(seed)
+    # Optionally reseed system-level libs if used (numpy etc.)
+
+    # Load problem locally in worker to avoid shared-state issues
+    problem = MDVRP_Problem()
+    problem.carregar_cordeau(DATASET_FILE)
+
+    ga = HGS_MDVRP(problem, pop_size=POP_SIZE, geracoes=GENERATIONS)
+    sol_seq, sol_fit = ga.run(run_id=run_id)
+    # Return serializable result (list of ints and float)
+    return (run_id, sol_seq, sol_fit)
+
 def run_experiment():
-    DATASET_FILE = "./dataset/p01.mdvrp"
+    DATASET_FILE = "../dataset/p01.mdvrp"
     NUM_RUNS = 30         
     POP_SIZE = 50
     GENERATIONS = 100     
-    
+    NUM_WORKERS = max(1, os.cpu_count() - 3)   # núcleos a serem usados
+    SEED_BASE = 12345                   # base de seed para reprodutibilidade
+
     # Create Output Folder
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     output_folder = f"results_{timestamp}"
     os.makedirs(output_folder, exist_ok=True)
     
     print(f"--- Starting Experiment: {NUM_RUNS} cycles ---")
+    print(f"Using up to {NUM_WORKERS} worker processes.")
     print(f"Results will be saved in: {output_folder}/")
     
+    # Validate dataset file
     problem = MDVRP_Problem()
     try:
         problem.carregar_cordeau(DATASET_FILE)
@@ -266,30 +300,39 @@ def run_experiment():
         print(f"Error loading file: {e}")
         return
 
+    # Prepare args for each run
+    args_list = [(i, DATASET_FILE, POP_SIZE, GENERATIONS, SEED_BASE) for i in range(1, NUM_RUNS + 1)]
+
     results_log = []
     best_global_sol = None
     best_global_fit = float('inf')
 
-    # --- STATISTICAL LOOP ---
-    for i in range(1, NUM_RUNS + 1):
-        ga = HGS_MDVRP(problem, pop_size=POP_SIZE, geracoes=GENERATIONS)
-        
-        # Run GA
-        (sol_seq, sol_fit) = ga.run(run_id=i)
-        
-        # Log
-        print(f"Run {i}/{NUM_RUNS} | Best Cost: {sol_fit:.2f}")
-        results_log.append(sol_fit)
-        
-        # Save Global Best
-        if sol_fit < best_global_fit:
-            best_global_fit = sol_fit
-            best_global_sol = sol_seq
+    # Use ProcessPoolExecutor for easier handling
+    start_time = time.time()
+    with ProcessPoolExecutor(max_workers=NUM_WORKERS) as exe:
+        futures = {exe.submit(_worker_run, args): args[0] for args in args_list}
+        for fut in as_completed(futures):
+            run_id = futures[fut]
+            try:
+                rid, sol_seq, sol_fit = fut.result()
+            except Exception as exc:
+                print(f"Run {run_id} generated an exception: {exc}")
+                continue
+
+            print(f"Run {rid}/{NUM_RUNS} | Best Cost: {sol_fit:.2f}")
+            results_log.append(sol_fit)
+
+            if sol_fit < best_global_fit:
+                best_global_fit = sol_fit
+                best_global_sol = sol_seq
+
+    elapsed = time.time() - start_time
+    print(f"All runs finished in {elapsed:.2f}s")
 
     # --- STATISTICS ---
-    avg_cost = statistics.mean(results_log)
-    min_cost = min(results_log)
-    max_cost = max(results_log)
+    avg_cost = statistics.mean(results_log) if results_log else float('inf')
+    min_cost = min(results_log) if results_log else float('inf')
+    max_cost = max(results_log) if results_log else float('inf')
     std_dev = statistics.stdev(results_log) if len(results_log) > 1 else 0.0
 
     summary = (
@@ -297,6 +340,7 @@ def run_experiment():
         f"Dataset: {DATASET_FILE}\n"
         f"Runs: {NUM_RUNS}\n"
         f"Generations per run: {GENERATIONS}\n"
+        f"Workers (max): {NUM_WORKERS}\n"
         f"--------------------------\n"
         f"MIN Cost (Best Global): {min_cost:.2f}\n"
         f"MAX Cost (Worst Run):   {max_cost:.2f}\n"
@@ -309,22 +353,23 @@ def run_experiment():
     print("\n" + summary)
 
     # --- SAVING RESULTS ---
-    # 1. Save Text Summary
     with open(os.path.join(output_folder, "summary.txt"), "w") as f:
         f.write(summary)
         
-    # 2. Decode and Save Plot of Best Solution
-    decoder = SplitDecoderMDVRP(problem)
-    rotas_finais, _ = decoder.split(best_global_sol)
-    
-    save_plot(problem, rotas_finais, best_global_fit, output_folder)
-    
-    # 3. Save Route Details
-    with open(os.path.join(output_folder, "best_routes_details.txt"), "w") as f:
-        f.write(f"BEST SOLUTION DETAILS (Cost: {best_global_fit:.2f})\n\n")
-        for idx, r in enumerate(rotas_finais):
-            f.write(f"Route {idx+1} (Depot {r['deposito'].id}): {[c.id for c in r['clientes']]}\n")
-            f.write(f"   -> Route Cost impact: {r['custo']:.2f}\n")
+    # 2. Decode and Save Plot of Best Solution (do it in main process)
+    if best_global_sol is not None:
+        decoder = SplitDecoderMDVRP(problem)
+        rotas_finais, _ = decoder.split(best_global_sol)
+        save_plot(problem, rotas_finais, best_global_fit, output_folder)
+        
+        # 3. Save Route Details
+        with open(os.path.join(output_folder, "best_routes_details.txt"), "w") as f:
+            f.write(f"BEST SOLUTION DETAILS (Cost: {best_global_fit:.2f})\n\n")
+            for idx, r in enumerate(rotas_finais):
+                f.write(f"Route {idx+1} (Depot {r['deposito'].id}): {[c.id for c in r['clientes']]}\n")
+                f.write(f"   -> Route Cost impact: {r['custo']:.2f}\n")
+    else:
+        print("No valid solutions found in runs.")
 
 if __name__ == "__main__":
     run_experiment()

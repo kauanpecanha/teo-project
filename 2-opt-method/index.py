@@ -292,7 +292,7 @@ def _worker_run(args):
     return (run_id, sol_seq, sol_fit)
 
 def run_experiment():
-    DATASET_FILE = "../dataset/p01.mdvrp"
+    DATASET_FILE = "./dataset/p01.mdvrp"
     NUM_RUNS = 30         
     POP_SIZE = 50
     GENERATIONS = 100     

@@ -1,15 +1,33 @@
+#!/usr/bin/env python3
+
+import os
+import glob
+import csv
 import math
 import random
-import matplotlib.pyplot as plt
-import copy
-import os
-import datetime
 import statistics
-import multiprocessing
+import datetime
+import matplotlib.pyplot as plt
+import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import time
 
-# --- 1. Modelagem MDVRP (Multi-Depot) ---
+# ============================================================
+# CONFIGURAÇÕES GERAIS
+# ============================================================
+
+DATASET_DIR = "./dataset"
+SOLUTIONS_DIR = "./solutions"
+RESULTS_ROOT = "./results"
+
+NUM_RUNS = 30
+POP_SIZE = 50
+GENERATIONS = 100
+WORKERS = max(1, os.cpu_count() - 2)
+SEED_BASE = 1000
+
+# ============================================================
+# CLASSES DO MODELO
+# ============================================================
 
 class Node:
     def __init__(self, id, x, y, demanda=0, is_depot=False):
@@ -24,45 +42,31 @@ class MDVRP_Problem:
         self.clientes = []
         self.depositos = []
         self.capacidade_veiculo = 0
-        self.max_veiculos_por_deposito = 0
         self.dist_matrix = {}
 
     def carregar_cordeau(self, caminho_arquivo):
         with open(caminho_arquivo, 'r') as f:
             lines = [l.strip() for l in f.readlines() if l.strip()]
 
-        # Parsing Header
         header = list(map(int, lines[0].split()))
-        self.max_veiculos_por_deposito = header[1]
         num_clientes = header[2]
         num_depositos = header[3]
-
-        # Parsing Specs
-        specs_line_index = 1
-        specs = list(map(int, lines[specs_line_index].split()))
+        specs = list(map(int, lines[1].split()))
         self.capacidade_veiculo = specs[1]
 
         start_customers = 1 + num_depositos
-
-        # Parsing Clientes
         self.clientes = []
         for i in range(num_clientes):
-            line_idx = start_customers + i
-            dados = list(map(int, lines[line_idx].split()))
-            c = Node(id=dados[0], x=dados[1], y=dados[2], demanda=dados[4], is_depot=False)
-            self.clientes.append(c)
+            dados = list(map(int, lines[start_customers + i].split()))
+            self.clientes.append(Node(dados[0], dados[1], dados[2], demanda=dados[4]))
 
-        # Parsing Depositos
         start_depots = start_customers + num_clientes
         self.depositos = []
         for i in range(num_depositos):
-            line_idx = start_depots + i
-            if line_idx >= len(lines): break
-            dados = list(map(int, lines[line_idx].split()))
-            d = Node(id=dados[0], x=dados[1], y=dados[2], demanda=0, is_depot=True)
-            self.depositos.append(d)
+            if start_depots + i >= len(lines): break
+            dados = list(map(int, lines[start_depots + i].split()))
+            self.depositos.append(Node(dados[0], dados[1], dados[2], is_depot=True))
 
-        # Pre-calc Distances
         todos_nos = self.clientes + self.depositos
         self.dist_matrix = {}
         for n1 in todos_nos:
@@ -72,8 +76,6 @@ class MDVRP_Problem:
 
     def get_dist(self, id1, id2):
         return self.dist_matrix.get((id1, id2), float('inf'))
-
-# --- 2. Split Algorithm ---
 
 class SplitDecoderMDVRP:
     def __init__(self, problem):
@@ -90,36 +92,33 @@ class SplitDecoderMDVRP:
             carga = 0
             custo_interno = 0
             j = i
-            
             while j <= n:
-                cliente_atual = self.p.clientes[self.get_client_idx(giant_tour[j-1])]
-                
-                if carga + cliente_atual.demanda > self.p.capacidade_veiculo:
+                curr = self.p.clientes[self.get_client_idx(giant_tour[j-1])]
+                if carga + curr.demanda > self.p.capacidade_veiculo:
                     break
-                carga += cliente_atual.demanda
+                carga += curr.demanda
                 
                 if j > i:
-                    cliente_anterior = self.p.clientes[self.get_client_idx(giant_tour[j-2])]
-                    custo_interno += self.p.get_dist(cliente_anterior.id, cliente_atual.id)
+                    prev = self.p.clientes[self.get_client_idx(giant_tour[j-2])]
+                    custo_interno += self.p.get_dist(prev.id, curr.id)
 
-                primeiro_cliente = self.p.clientes[self.get_client_idx(giant_tour[i-1])]
-                ultimo_cliente = cliente_atual
+                first = self.p.clientes[self.get_client_idx(giant_tour[i-1])]
                 
-                melhor_custo_rota = float('inf')
-                melhor_deposito_idx = -1
+                melhor_custo = float('inf')
+                melhor_dep = -1
 
-                for idx_dep, deposito in enumerate(self.p.depositos):
-                    d_entrada = self.p.get_dist(deposito.id, primeiro_cliente.id)
-                    d_saida = self.p.get_dist(ultimo_cliente.id, deposito.id)
-                    custo_total = d_entrada + custo_interno + d_saida
-                    if custo_total < melhor_custo_rota:
-                        melhor_custo_rota = custo_total
-                        melhor_deposito_idx = idx_dep
+                for idx_dep, dep in enumerate(self.p.depositos):
+                    d_in = self.p.get_dist(dep.id, first.id)
+                    d_out = self.p.get_dist(curr.id, dep.id)
+                    total = d_in + custo_interno + d_out
+                    if total < melhor_custo:
+                        melhor_custo = total
+                        melhor_dep = idx_dep
 
-                if V[i-1] + melhor_custo_rota < V[j]:
-                    V[j] = V[i-1] + melhor_custo_rota
+                if V[i-1] + melhor_custo < V[j]:
+                    V[j] = V[i-1] + melhor_custo
                     P[j] = i - 1
-                    D[j] = melhor_deposito_idx
+                    D[j] = melhor_dep
                 j += 1
 
         rotas = []
@@ -139,8 +138,6 @@ class SplitDecoderMDVRP:
     def get_client_idx(self, cid):
         return cid - 1
 
-# --- 3. HGS ---
-
 class HGS_MDVRP:
     def __init__(self, problema, pop_size=50, geracoes=100):
         self.p = problema
@@ -150,14 +147,14 @@ class HGS_MDVRP:
         self.populacao = []
 
     def inicializar(self):
-        ids_base = [c.id for c in self.p.clientes]
+        ids = [c.id for c in self.p.clientes]
         for _ in range(self.pop_size):
-            random.shuffle(ids_base)
-            fit = self.avaliar(ids_base)
-            self.populacao.append((list(ids_base), fit))
+            random.shuffle(ids)
+            fit = self.avaliar(ids)
+            self.populacao.append((list(ids), fit))
 
-    def avaliar(self, cromossomo):
-        _, custo = self.decoder.split(cromossomo)
+    def avaliar(self, tour):
+        _, custo = self.decoder.split(tour)
         return custo
 
     def crossover_ox(self, p1, p2):
@@ -176,7 +173,6 @@ class HGS_MDVRP:
     def local_search_swap(self, tour):
         best_tour = list(tour)
         best_fit = self.avaliar(tour)
-        # Reduced iterations for speed in repeated runs
         for _ in range(30): 
             i, j = random.sample(range(len(tour)), 2)
             neighbor = list(best_tour)
@@ -188,188 +184,237 @@ class HGS_MDVRP:
         return best_tour, best_fit
 
     def run(self, run_id=None):
-        # Optional: use run_id in randomness if provided (for reproducibility)
         self.inicializar()
         self.populacao.sort(key=lambda x: x[1])
         best_sol = self.populacao[0]
         
-        for g in range(self.geracoes):
+        for _ in range(self.geracoes):
             new_pop = self.populacao[:int(self.pop_size*0.2)]
             while len(new_pop) < self.pop_size:
-                parent1 = min(random.sample(self.populacao, 5), key=lambda x: x[1])[0]
-                parent2 = min(random.sample(self.populacao, 5), key=lambda x: x[1])[0]
-                child_seq = self.crossover_ox(parent1, parent2)
+                p1 = min(random.sample(self.populacao, 5), key=lambda x: x[1])[0]
+                p2 = min(random.sample(self.populacao, 5), key=lambda x: x[1])[0]
+                child = self.crossover_ox(p1, p2)
                 if random.random() < 0.6: 
-                    child_seq, fit = self.local_search_swap(child_seq)
+                    child, fit = self.local_search_swap(child)
                 else:
-                    fit = self.avaliar(child_seq)
-                new_pop.append((child_seq, fit))
+                    fit = self.avaliar(child)
+                new_pop.append((child, fit))
             self.populacao = sorted(new_pop, key=lambda x: x[1])
             if self.populacao[0][1] < best_sol[1]:
                 best_sol = self.populacao[0]
-        
         return best_sol
 
-# --- 4. Saving & Plotting ---
+# ============================================================
+# FUNÇÕES WORKER E PLOTAGEM
+# ============================================================
 
-def save_plot(problem, rotas, custo_total, folder, filename="best_run.png"):
-    plt.figure(figsize=(12, 10))
-    colors = ['red', 'green', 'blue', 'purple', 'orange', 'cyan', 'magenta', 'brown']
+def run_single_ga(args):
+    """Worker isolado para processamento paralelo"""
+    seed, dataset_path = args
+    random.seed(seed)
+    p = MDVRP_Problem()
+    try:
+        p.carregar_cordeau(dataset_path)
+    except Exception as e:
+        return None
+    ga = HGS_MDVRP(p, pop_size=POP_SIZE, geracoes=GENERATIONS)
+    seq, cost = ga.run(run_id=seed)
+    return {"seed": seed, "cost": cost, "sequence": seq}
+
+def load_reference(instance_name):
+    """Busca o arquivo .res correspondente na pasta solutions"""
+    res_path = os.path.join(SOLUTIONS_DIR, f"{instance_name}.res")
+    if not os.path.exists(res_path):
+        return None
+    try:
+        with open(res_path, 'r', errors='ignore') as f:
+            lines = [l.strip() for l in f.readlines() if l.strip()]
+            return float(lines[0])
+    except:
+        return None
+
+def save_instance_plots(problem, results, output_dir, ref_cost):
+    # 1. Scatter Plot
+    costs = [r["cost"] for r in results]
+    best_my_cost = min(costs)
     
-    # Clientes
-    for c in problem.clientes:
-        plt.scatter(c.x, c.y, c='grey', s=20, alpha=0.3)
-
-    # Rotas
-    for i, rota in enumerate(rotas):
-        dep = rota['deposito']
-        # Cor baseada no deposito
-        idx_dep = -1
-        for k, d in enumerate(problem.depositos):
-            if d.id == dep.id:
-                idx_dep = k
-                break
-        cor_rota = colors[idx_dep % len(colors)]
-        
-        path_x = [dep.x] + [c.x for c in rota['clientes']] + [dep.x]
-        path_y = [dep.y] + [c.y for c in rota['clientes']] + [dep.y]
-        plt.plot(path_x, path_y, c=cor_rota, alpha=0.8, linewidth=1.5)
-
-    # Depositos
-    for i, d in enumerate(problem.depositos):
-        c = colors[i % len(colors)]
-        plt.scatter(d.x, d.y, c=c, marker='s', s=150, edgecolors='black', zorder=10, label=f"Dep {d.id}")
-
-    plt.title(f"Best Solution MDVRP - Cost: {custo_total:.2f}")
+    plt.figure(figsize=(8, 5))
+    plt.scatter(range(1, len(costs)+1), costs, label="Execuções GA", alpha=0.7)
+    if ref_cost:
+        plt.axhline(ref_cost, color='red', linestyle='--', label=f"Referência ({ref_cost:.2f})")
+    plt.scatter([costs.index(best_my_cost)+1], [best_my_cost], color='green', s=100, label="Melhor GA")
+    
+    plt.xlabel("Execução")
+    plt.ylabel("Custo")
+    plt.title("Dispersão das Execuções")
     plt.legend()
     plt.grid(True, alpha=0.3)
-    
-    save_path = os.path.join(folder, filename)
-    plt.savefig(save_path)
+    plt.savefig(os.path.join(output_dir, "scatter_local.png"))
     plt.close()
-    print(f"Graph saved to: {save_path}")
 
-# -----------------------
-# Parallel execution code
-# -----------------------
+    # 2. Melhor Rota Visual
+    best_run = min(results, key=lambda x: x["cost"])
+    decoder = SplitDecoderMDVRP(problem)
+    rotas, _ = decoder.split(best_run["sequence"])
+    
+    plt.figure(figsize=(10, 8))
+    colors = plt.cm.get_cmap('tab10', len(problem.depositos))
+    
+    for c in problem.clientes:
+        plt.scatter(c.x, c.y, c='grey', s=15, alpha=0.3)
+    
+    for r in rotas:
+        dep = r['deposito']
+        d_idx = [d.id for d in problem.depositos].index(dep.id)
+        path_x = [dep.x] + [c.x for c in r['clientes']] + [dep.x]
+        path_y = [dep.y] + [c.y for c in r['clientes']] + [dep.y]
+        plt.plot(path_x, path_y, color=colors(d_idx), linewidth=1, alpha=0.8)
 
-def _worker_run(args):
-    """
-    Executed in worker processes.
-    args: tuple (run_id, DATASET_FILE, POP_SIZE, GENERATIONS, SEED_BASE)
-    Returns: (run_id, best_seq, best_fit)
-    """
-    run_id, DATASET_FILE, POP_SIZE, GENERATIONS, SEED_BASE = args
+    for i, d in enumerate(problem.depositos):
+        plt.scatter(d.x, d.y, c=[colors(i)], marker='s', s=100, edgecolors='black', label=f"Dep {d.id}")
 
-    # Re-seed RNG for reproducibility (different seed per run)
-    seed = SEED_BASE + int(run_id)
-    random.seed(seed)
-    # Optionally reseed system-level libs if used (numpy etc.)
+    plt.title(f"Melhor Solução (Custo: {best_run['cost']:.2f})")
+    plt.legend()
+    plt.savefig(os.path.join(output_dir, "melhor_rota.png"))
+    plt.close()
 
-    # Load problem locally in worker to avoid shared-state issues
-    problem = MDVRP_Problem()
-    problem.carregar_cordeau(DATASET_FILE)
+def plot_global_comparison(global_stats, run_dir):
+    """Gera gráfico de barras comparativo: Meu Melhor vs Referência"""
+    instances = sorted(global_stats.keys())
+    my_best = []
+    refs = []
+    
+    for inst in instances:
+        my_best.append(global_stats[inst]['best_ga'])
+        # Se não houver referência, usamos 0 ou omitimos visualmente
+        refs.append(global_stats[inst]['ref_cost'] if global_stats[inst]['ref_cost'] else 0)
 
-    ga = HGS_MDVRP(problem, pop_size=POP_SIZE, geracoes=GENERATIONS)
-    sol_seq, sol_fit = ga.run(run_id=run_id)
-    # Return serializable result (list of ints and float)
-    return (run_id, sol_seq, sol_fit)
+    x = np.arange(len(instances))
+    width = 0.35
 
-def run_experiment():
-    DATASET_FILE = "../dataset/p01.mdvrp"
-    NUM_RUNS = 30         
-    POP_SIZE = 50
-    GENERATIONS = 100     
-    NUM_WORKERS = max(1, os.cpu_count() - 3)   # núcleos a serem usados
-    SEED_BASE = 12345                   # base de seed para reprodutibilidade
+    plt.figure(figsize=(12, 6))
+    
+    # Se houver referências válidas, plotamos. Caso contrário, só o GA.
+    if any(r > 0 for r in refs):
+        plt.bar(x - width/2, my_best, width, label='Meu GA (Melhor)', color='steelblue')
+        plt.bar(x + width/2, refs, width, label='Referência (BKS)', color='orange')
+    else:
+        plt.bar(x, my_best, width, label='Meu GA (Melhor)', color='steelblue')
 
-    # Create Output Folder
+    plt.xlabel('Instância')
+    plt.ylabel('Custo Total')
+    plt.title('Comparativo Global: Algoritmo Genético vs Melhor Solução Conhecida')
+    plt.xticks(x, instances, rotation=45)
+    plt.legend()
+    plt.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(run_dir, "COMPARATIVO_GLOBAL.png"))
+    plt.close()
+    print(f"[INFO] Gráfico comparativo global salvo em {run_dir}")
+
+# ============================================================
+# LÓGICA PRINCIPAL (ITERAÇÃO)
+# ============================================================
+
+def process_instance(filepath, run_timestamp_dir):
+    filename = os.path.basename(filepath)
+    instance_name = os.path.splitext(filename)[0]
+    
+    # Criar pasta para esta instância
+    instance_dir = os.path.join(run_timestamp_dir, instance_name)
+    os.makedirs(instance_dir, exist_ok=True)
+    
+    print(f"\n>>> Processando instância: {instance_name}")
+    
+    # Carregar Referência
+    ref_cost = load_reference(instance_name)
+    
+    # Executar GA Paralelo
+    seeds = [SEED_BASE + i for i in range(NUM_RUNS)]
+    results = []
+    args_list = [(s, filepath) for s in seeds]
+    
+    with ProcessPoolExecutor(max_workers=WORKERS) as executor:
+        futures = {executor.submit(run_single_ga, arg): arg for arg in args_list}
+        for future in as_completed(futures):
+            res = future.result()
+            if res:
+                results.append(res)
+    
+    if not results:
+        print(f"[ERRO] Falha ao processar {instance_name}")
+        return None
+
+    # Estatísticas
+    costs = [r["cost"] for r in results]
+    best_ga = min(costs)
+    avg_ga = statistics.mean(costs)
+    
+    # Salvar CSV Local
+    with open(os.path.join(instance_dir, "resultados.csv"), "w", newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["seed", "custo", "sequencia"])
+        for r in results:
+            writer.writerow([r["seed"], r["cost"], r["sequence"]])
+
+    # Salvar Sumário Local
+    with open(os.path.join(instance_dir, "sumario.txt"), "w") as f:
+        gap = ((best_ga - ref_cost)/ref_cost * 100) if ref_cost else 0
+        f.write(f"Instância: {instance_name}\n")
+        f.write(f"Ref (BKS): {ref_cost if ref_cost else 'N/A'}\n")
+        f.write(f"GA Melhor: {best_ga:.2f}\n")
+        f.write(f"GA Média:  {avg_ga:.2f}\n")
+        f.write(f"GAP:       {gap:.2f}%\n")
+
+    # Gerar Plots Locais
+    p = MDVRP_Problem()
+    p.carregar_cordeau(filepath)
+    save_instance_plots(p, results, instance_dir, ref_cost)
+
+    return {
+        "name": instance_name,
+        "best_ga": best_ga,
+        "avg_ga": avg_ga,
+        "ref_cost": ref_cost
+    }
+
+def main():
+    # Setup de diretórios
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_folder = f"results_{timestamp}"
-    os.makedirs(output_folder, exist_ok=True)
+    run_dir = os.path.join(RESULTS_ROOT, timestamp)
+    os.makedirs(run_dir, exist_ok=True)
     
-    print(f"--- Starting Experiment: {NUM_RUNS} cycles ---")
-    print(f"Using up to {NUM_WORKERS} worker processes.")
-    print(f"Results will be saved in: {output_folder}/")
-    
-    # Validate dataset file
-    problem = MDVRP_Problem()
-    try:
-        problem.carregar_cordeau(DATASET_FILE)
-    except Exception as e:
-        print(f"Error loading file: {e}")
+    # Encontrar arquivos
+    dataset_files = sorted(glob.glob(os.path.join(DATASET_DIR, "*.mdvrp")))
+    if not dataset_files:
+        print(f"[ERRO] Nenhum arquivo .mdvrp encontrado em {DATASET_DIR}")
         return
 
-    # Prepare args for each run
-    args_list = [(i, DATASET_FILE, POP_SIZE, GENERATIONS, SEED_BASE) for i in range(1, NUM_RUNS + 1)]
+    print(f"--- INICIANDO BATERIA DE TESTES ---")
+    print(f"Diretório de saída: {run_dir}")
+    print(f"Arquivos encontrados: {len(dataset_files)}\n")
 
-    results_log = []
-    best_global_sol = None
-    best_global_fit = float('inf')
+    global_stats = {}
 
-    # Use ProcessPoolExecutor for easier handling
-    start_time = time.time()
-    with ProcessPoolExecutor(max_workers=NUM_WORKERS) as exe:
-        futures = {exe.submit(_worker_run, args): args[0] for args in args_list}
-        for fut in as_completed(futures):
-            run_id = futures[fut]
-            try:
-                rid, sol_seq, sol_fit = fut.result()
-            except Exception as exc:
-                print(f"Run {run_id} generated an exception: {exc}")
-                continue
+    for fpath in dataset_files:
+        stats = process_instance(fpath, run_dir)
+        if stats:
+            global_stats[stats["name"]] = stats
 
-            print(f"Run {rid}/{NUM_RUNS} | Best Cost: {sol_fit:.2f}")
-            results_log.append(sol_fit)
+    # Gerar Relatório Global CSV
+    with open(os.path.join(run_dir, "resumo_geral.csv"), "w", newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["instancia", "ref_bks", "ga_melhor", "ga_media", "gap_percent"])
+        for name in sorted(global_stats.keys()):
+            s = global_stats[name]
+            ref = s['ref_cost']
+            gap = ((s['best_ga'] - ref)/ref * 100) if ref else 0
+            writer.writerow([name, ref, f"{s['best_ga']:.2f}", f"{s['avg_ga']:.2f}", f"{gap:.2f}"])
 
-            if sol_fit < best_global_fit:
-                best_global_fit = sol_fit
-                best_global_sol = sol_seq
-
-    elapsed = time.time() - start_time
-    print(f"All runs finished in {elapsed:.2f}s")
-
-    # --- STATISTICS ---
-    avg_cost = statistics.mean(results_log) if results_log else float('inf')
-    min_cost = min(results_log) if results_log else float('inf')
-    max_cost = max(results_log) if results_log else float('inf')
-    std_dev = statistics.stdev(results_log) if len(results_log) > 1 else 0.0
-
-    summary = (
-        f"--- EXPERIMENT SUMMARY ---\n"
-        f"Dataset: {DATASET_FILE}\n"
-        f"Runs: {NUM_RUNS}\n"
-        f"Generations per run: {GENERATIONS}\n"
-        f"Workers (max): {NUM_WORKERS}\n"
-        f"--------------------------\n"
-        f"MIN Cost (Best Global): {min_cost:.2f}\n"
-        f"MAX Cost (Worst Run):   {max_cost:.2f}\n"
-        f"AVG Cost:               {avg_cost:.2f}\n"
-        f"STD DEV:                {std_dev:.2f}\n"
-        f"--------------------------\n"
-        f"All Runs Data: {results_log}\n"
-    )
-
-    print("\n" + summary)
-
-    # --- SAVING RESULTS ---
-    with open(os.path.join(output_folder, "summary.txt"), "w") as f:
-        f.write(summary)
-        
-    # 2. Decode and Save Plot of Best Solution (do it in main process)
-    if best_global_sol is not None:
-        decoder = SplitDecoderMDVRP(problem)
-        rotas_finais, _ = decoder.split(best_global_sol)
-        save_plot(problem, rotas_finais, best_global_fit, output_folder)
-        
-        # 3. Save Route Details
-        with open(os.path.join(output_folder, "best_routes_details.txt"), "w") as f:
-            f.write(f"BEST SOLUTION DETAILS (Cost: {best_global_fit:.2f})\n\n")
-            for idx, r in enumerate(rotas_finais):
-                f.write(f"Route {idx+1} (Depot {r['deposito'].id}): {[c.id for c in r['clientes']]}\n")
-                f.write(f"   -> Route Cost impact: {r['custo']:.2f}\n")
-    else:
-        print("No valid solutions found in runs.")
+    # Gerar Gráfico Global
+    plot_global_comparison(global_stats, run_dir)
+    print("\n--- BATERIA FINALIZADA COM SUCESSO ---")
 
 if __name__ == "__main__":
-    run_experiment()
+    main()

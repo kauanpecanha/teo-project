@@ -1,0 +1,5 @@
+Instância: p02
+Ref (BKS): 473.53
+GA Melhor: 523.29
+GA Média:  557.99
+GAP:       10.51%

@@ -1,0 +1,5 @@
+Instância: p11
+Ref (BKS): 3554.18
+GA Melhor: 8141.18
+GA Média:  8509.80
+GAP:       129.06%

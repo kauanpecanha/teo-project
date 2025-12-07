@@ -1,0 +1,5 @@
+Instância: p07
+Ref (BKS): 885.8
+GA Melhor: 1024.53
+GA Média:  1107.41
+GAP:       15.66%

@@ -1,0 +1,5 @@
+Instância: p05
+Ref (BKS): 750.03
+GA Melhor: 996.40
+GA Média:  1102.03
+GAP:       32.85%

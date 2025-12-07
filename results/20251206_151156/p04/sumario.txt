@@ -1,0 +1,5 @@
+Instância: p04
+Ref (BKS): 1001.59
+GA Melhor: 1165.24
+GA Média:  1261.60
+GAP:       16.34%

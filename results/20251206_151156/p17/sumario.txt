@@ -1,0 +1,5 @@
+Instância: p17
+Ref (BKS): 2709.09
+GA Melhor: 4665.70
+GA Média:  4896.71
+GAP:       72.22%

@@ -1,0 +1,5 @@
+Instância: p14
+Ref (BKS): 1360.12
+GA Melhor: 1656.69
+GA Média:  1768.48
+GAP:       21.80%

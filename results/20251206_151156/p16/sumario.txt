@@ -1,0 +1,5 @@
+Instância: p16
+Ref (BKS): 2572.23
+GA Melhor: 4665.70
+GA Média:  4896.71
+GAP:       81.39%

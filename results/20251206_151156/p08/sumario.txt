@@ -1,0 +1,5 @@
+Instância: p08
+Ref (BKS): 4437.68
+GA Melhor: 9920.45
+GA Média:  10335.64
+GAP:       123.55%

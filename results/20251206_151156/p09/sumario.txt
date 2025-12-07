@@ -1,0 +1,5 @@
+Instância: p09
+Ref (BKS): 3900.22
+GA Melhor: 8905.58
+GA Média:  9298.66
+GAP:       128.34%

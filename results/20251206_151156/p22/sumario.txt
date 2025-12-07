@@ -1,0 +1,5 @@
+Instância: p22
+Ref (BKS): 5702.16
+GA Melhor: 15210.94
+GA Média:  15792.13
+GAP:       166.76%

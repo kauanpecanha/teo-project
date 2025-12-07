@@ -1,0 +1,5 @@
+Instância: p10
+Ref (BKS): 3663.02
+GA Melhor: 8164.94
+GA Média:  8782.14
+GAP:       122.90%

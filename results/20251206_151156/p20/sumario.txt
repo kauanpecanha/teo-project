@@ -1,0 +1,5 @@
+Instância: p20
+Ref (BKS): 4058.07
+GA Melhor: 8461.95
+GA Média:  8916.44
+GAP:       108.52%

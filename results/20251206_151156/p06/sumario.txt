@@ -1,0 +1,5 @@
+Instância: p06
+Ref (BKS): 876.5
+GA Melhor: 1059.05
+GA Média:  1114.78
+GAP:       20.83%

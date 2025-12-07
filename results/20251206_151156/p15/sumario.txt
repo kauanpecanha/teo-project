@@ -1,0 +1,5 @@
+Instância: p15
+Ref (BKS): 2505.42
+GA Melhor: 4665.70
+GA Média:  4896.71
+GAP:       86.22%

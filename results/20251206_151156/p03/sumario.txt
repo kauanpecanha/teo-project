@@ -1,0 +1,5 @@
+Instância: p03
+Ref (BKS): 641.19
+GA Melhor: 722.95
+GA Média:  764.14
+GAP:       12.75%

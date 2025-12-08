@@ -110,6 +110,7 @@ class SplitDecoderMDVRP:
 
     def get_client_idx(self, cid):
         return cid - 1
+    
 class HGS_MDVRP:
     def __init__(self, problema, pop_size=50, geracoes=100):
         self.p = problema

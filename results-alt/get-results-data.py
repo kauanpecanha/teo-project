@@ -9,8 +9,8 @@ def sort_key(filename):
     return int(numbers[-1]) if numbers else 0
 
 # Procura os CSVs na pasta
-result_files = sorted(glob.glob("resultados-p*.csv"), key=sort_key)
-ref_dir = "."  # Diretório onde estão os arquivos .res
+result_files = sorted(glob.glob("./results-alt/resultados-p*.csv"), key=sort_key)
+ref_dir = "./results-alt"  # Diretório onde estão os arquivos .res
 
 for f_res in result_files:
     # Extrai nome da instância do nome do arquivo
@@ -42,7 +42,6 @@ for f_res in result_files:
             
         best_ga = costs.min()
         avg_ga = costs.mean()
-        std_ga = costs.std()
         
         if bks and bks > 0:
             gap = ((best_ga - bks) / bks) * 100
@@ -51,7 +50,7 @@ for f_res in result_files:
             gap_str = "-"
             if bks is None: bks = 0
             
-        print(f"{instancia.upper()} & {bks:.2f} & {best_ga:.2f} & {avg_ga:.2f} & {gap_str}\\% & {std_ga:.2f} ")
+        print(f"{instancia.upper()} & {bks:.2f} & {best_ga:.2f} & {avg_ga:.2f} & {gap_str}%")
         
     except Exception as e:
         print(f"{instancia.upper()} & - & - & - & - & - % Erro: {e}")

@@ -10,7 +10,7 @@ def sort_key(filename):
 
 # Procura os CSVs na pasta
 result_files = sorted(glob.glob("./results-alt/resultados-p*.csv"), key=sort_key)
-ref_dir = "./results-alt"  # Diretório onde estão os arquivos .res
+ref_dir = "./solutions"  # Diretório onde estão os arquivos .res
 
 for f_res in result_files:
     # Extrai nome da instância do nome do arquivo

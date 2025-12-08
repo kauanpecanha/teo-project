@@ -48,7 +48,7 @@ def load_reference(instance_name):
         return None
 
 def save_instance_plots(problem, results, output_dir, ref_cost):
-    # 1. Scatter Plot
+    # Scatter Plot
     costs = [r["cost"] for r in results]
     best_my_cost = min(costs)
     
@@ -66,7 +66,7 @@ def save_instance_plots(problem, results, output_dir, ref_cost):
     plt.savefig(os.path.join(output_dir, "scatter_local.png"))
     plt.close()
 
-    # 2. Melhor Rota Visual
+    # Melhor Rota Visual
     best_run = min(results, key=lambda x: x["cost"])
     decoder = SplitDecoderMDVRP(problem)
     rotas, _ = decoder.split(best_run["sequence"])

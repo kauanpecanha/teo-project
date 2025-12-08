@@ -4,25 +4,24 @@ import os
 import re
 
 def sort_key(filename):
-    # Ordena corretamente p01, p02... p10...
+    # Ordena corretamente as instâncias de dados
     numbers = re.findall(r'\d+', filename)
     return int(numbers[-1]) if numbers else 0
 
-# Procura os CSVs na pasta atual
+# Procura os CSVs na pasta
 result_files = sorted(glob.glob("resultados-p*.csv"), key=sort_key)
 ref_dir = "."  # Diretório onde estão os arquivos .res
 
 for f_res in result_files:
-    # Extrai nome da instância (ex: p01) do nome do arquivo
+    # Extrai nome da instância do nome do arquivo
     match = re.search(r'(p\d+)', f_res)
     if not match: continue
     instancia = match.group(1)
     
-    # Busca arquivo de referência (ex: p01.res)
+    # Busca arquivo de solução
     f_ref = os.path.join(ref_dir, f"{instancia}.res")
     
     bks = None
-    # Tenta ler o BKS
     if os.path.exists(f_ref):
         try:
             with open(f_ref, 'r') as f:
@@ -36,17 +35,15 @@ for f_res in result_files:
     try:
         df = pd.read_csv(f_res)
         
-        # Identifica a coluna de custo
         if 'custo' in df.columns:
             costs = df['custo']
         else:
-            costs = df.iloc[:, 1] # Assume coluna 2 se não tiver header
+            costs = df.iloc[:, 1]
             
         best_ga = costs.min()
         avg_ga = costs.mean()
         std_ga = costs.std()
         
-        # Calcular GAP
         if bks and bks > 0:
             gap = ((best_ga - bks) / bks) * 100
             gap_str = f"{gap:.2f}"
@@ -54,8 +51,7 @@ for f_res in result_files:
             gap_str = "-"
             if bks is None: bks = 0
             
-        # Linha da tabela: Instância & BKS & Melhor & Média & Gap & Desvio
-        print(f"{instancia.upper()} & {bks:.2f} & {best_ga:.2f} & {avg_ga:.2f} & {gap_str}\\% & {std_ga:.2f} \\\\")
+        print(f"{instancia.upper()} & {bks:.2f} & {best_ga:.2f} & {avg_ga:.2f} & {gap_str}\\% & {std_ga:.2f} ")
         
     except Exception as e:
-        print(f"{instancia.upper()} & - & - & - & - & - \\\\ % Erro: {e}")
+        print(f"{instancia.upper()} & - & - & - & - & - % Erro: {e}")

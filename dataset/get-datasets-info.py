@@ -3,7 +3,7 @@ import os
 import re
 
 def sort_key(filename):
-    # Ordena corretamente p01, p02... p10...
+    # Ordena corretamente as instâncias de dados
     numbers = re.findall(r'\d+', filename)
     return int(numbers[-1]) if numbers else 0
 
